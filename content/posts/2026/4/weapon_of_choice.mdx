@@ -1,0 +1,68 @@
+---
+title: "Weapon of Choice"
+date: "2026-04-24"
+description: "My frugal agent setup"
+---
+
+## The return of side projects
+
+It has been almost 3 years since I wrote my last blog post. Thanks to advancements in both LLMs and VPN technologies, I can now rapidly prototype ideas and tiny custom apps anytime and anywhere. Yes, my agents are working as I type this,
+
+## The frugal setup
+
+It is in my blood that I love a good bargain and be frugal. I am [the "mom" Jimmy O. Yang talks about](https://youtu.be/t0YVPZBTuxI?si=LdqIy0FY2mDGDf7E).
+
+> Guess how much
+
+I want to set up a group of agents for experimenting with minimal spending. I want my setup to have:
+
+- predictable spending
+- private and secure
+- reproducible for horizontal scaling
+
+### LLM Providers
+
+Why lock in with a LLM provider and scale your bill with tokens usage? Hell no.
+
+Baseline: I want predictable billing, not bankruptcy.
+
+#### GitHub Copilot $10 USD monthly – YES
+
+GitHub Copilot offers a predictable monthly subscription instead of per-token billing. It gives multiple models to choose from without surprise charges. I don't even use models with > 1x request cost (Claude Opus 3 is 7x during the time I wrote this). Sometimes, I even use GPT-5 Mini for 0x cost.
+The only catch is that not all existing agent frameworks support OAuth instead of API keys.
+
+#### MiniMax $10 USD monthly Token plan – YES
+
+1500 requests with a 5-hour rolling reset. Open-weight model with decent context window. I have no complaints.
+
+> Lesson learnt: switching models midway in a session or loadbalance requests to 2 different models are prone to hallucination, specially models with different context window size. Instead load balance the unit of task between models.
+
+#### Why not run my own GPU cluster?
+
+It is tempting with `Ollama` and `vLLM` making local LLM so easy to set up. I do think the future is local inference. Not quite there yet. Also why own depreciating hardware? I am not just paying the LLM provider for setup cost. There are upgrade and maintenance costs. Word of the day – [total cost of ownership](https://en.wikipedia.org/wiki/Total_cost_of_ownership).
+
+### Agent framework
+
+Agent is just a [loop](https://sketch.dev/blog/agent-loop). It needs at least the following:
+
+- HTTP client to call the LLM provider
+- Execution environment for the `tool_calls`
+- A user interface for user interaction or a way to get user input
+
+Some people refer this as [_Harness_](https://www.langchain.com/blog/the-anatomy-of-an-agent-harness). It is like the Ironman suit (_Harness_) for Tony Stark (LLM).
+
+Mac Mini for `OpenClaw`? I'm no baller. I'm going to run my agent on my dusty 3 Raspberry Pi Model 3B.
+
+I started by writing a `go` wrapper around [`opencode`](https://opencode.ai/). Raspberry Pis Model 3B have 1GB of RAM and `opencode` recommends at least 4GB. I also looked into my current favorite coding agent [`crush`](https://github.com/charmbracelet/crush). I ended up with both [PicoClaw](https://github.com/sipeed/picoclaw) (`go`) and [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) (`rust`), so that I don't need to reinvent the wheel of session management and chat channel integration (whatsapp, discord, matrix, etc.)
+
+### Secure remote access
+
+Most of the time, I can just interact with the agent via the `Discord`. However, from time to time, I need secure connectivity to SSH into my Raspberry Pis. I use [`Netbird`](https://netbird.io/) instead of [`Tailscale`](https://tailscale.com/) due to `Netbird` open source nature. They are both private VPNs. Just install the client on your devices (Pi, iPhone, Laptop). However, from time to time, it would disconnect either due to token expiration or the Pi restarted. I just wrote a [simple systemd daemon](https://github.com/twistedogic/nestbird) to auto retry connecting to the VPN.
+
+### The setup
+
+3 Raspberry Pis Model 3B running `zeroclaw` and `picoclaw` as `Discord` bots with GitHub Copilot Pro and MiniMax Token Plan subscriptions connected via `Netbird`.
+
+## What's next
+
+My pursuit of a cheaper setup is **never-ending**. What tools do you use? Share your budget setup with me.
