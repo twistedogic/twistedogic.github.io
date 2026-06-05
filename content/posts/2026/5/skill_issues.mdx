@@ -1,0 +1,112 @@
+---
+title: "Skill (API) issues"
+date: "2026-05-26"
+description: "Difference between Skill and Tool — and what it means for your token bill"
+---
+
+## Random Encounter
+
+One day, I randomly come across [MetaClaw](https://github.com/aiming-lab/MetaClaw).
+
+> Just talk to your agent — it learns and EVOLVES.
+
+Awesome project. It uses [Tinker](https://www.thinkingmachines.ai/tinker/) — a training API by Thinking Machines Lab, founded by Mira Murati (Former CTO of OpenAI) — as its RL backend.
+
+In high level, it does:
+
+- Grade the conversation history with "helper" LLM as training dataset
+- Fine-tune open-weight LLM models (like Qwen, Llama) using [LoRA](https://www.thinkingmachines.ai/blog/lora/)
+
+MetaClaw is intelligent about when to do the grading and fine-tuning. It comes with 3 modes:
+
+- `skills_only` – Proxy your LLM API. Skills injected and auto-summarized after each session. No GPU/Tinker required.
+- `rl` – Skills + RL training (GRPO). Trains immediately when a batch is full. Optional OPD for teacher distillation.
+- `auto` – Skills + RL + smart scheduler. RL weight updates only run during sleep/idle/meeting windows.
+
+My frugal instinct – Hello `skills_only`
+
+This got me thinking: agent is just `http` client + `bash`. How does skill **actually** work at the API level? What is the difference between `skill` and `tool`?
+
+## How Do Skills Work?
+
+From [agentskills.io](https://agentskills.io/home#how-do-agent-skills-work):
+
+> Agents load skills through progressive disclosure, in three stages:
+>
+> - **Discovery**: At startup, agents load only the name and description of each available skill, just enough to know when it might be relevant.
+> - **Activation**: When a task matches a skill's description, the agent reads the full SKILL.md instructions into context.
+> - **Execution**: The agent follows the instructions, optionally executing bundled code or loading referenced files as needed.
+>
+> Full instructions load only when a task calls for them, so agents can keep many skills on hand with only a small context footprint.
+
+OK progressive disclosure, but how? Why don't I just write longer descriptions for my tools as instructions?
+
+For sure, the skill files' content has to somehow be made available to the LLM provider.
+
+## How Do Skills Work at the HTTP Request Level?
+
+There is no universal API for skills. Skills work entirely on the **client side**: the agent client reads SKILL.md files from disk, injects the relevant content into the conversation context, and the LLM provider never sees them as a special construct — just prompt tokens.
+
+The agent ecosystem loves using "skills" and "tools" interchangeably. Marketing decks blur the lines. Conference talks conflate them. But from an API perspective, these are fundamentally different architectural choices with measurable consequences.
+
+## What a Tool Actually Is
+
+A tool is an **executable function** with defined inputs, outputs, and side effects. When an agent calls a tool, something happens in the world: a database gets queried, an API gets hit, a file gets written.
+
+At the API level, tools appear as **schema definitions** in the request payload. That schema overhead is the cost you are paying.
+
+If you want to add a tool you need to extend or modify the harness. i.e. the code that is responsible for interacting with the model provider.
+
+## What a Skill Actually Is
+
+A skill is **packaged expertise** — context, instructions, domain knowledge, and behavioral patterns that make agents better at specific tasks. Skills don't execute code directly; they shape how the agent thinks about problems.
+
+At the API level, skills appear as **prompt content** injected into context. No schemas. Just guidance.
+
+Note that for the LLM to use the CLI described in the skills, it needs the harness to provide at least the `bash` tools for executing the CLI.
+
+## The Token Math (Benchmark Data)
+
+Scalekit ran 75 identical benchmark runs comparing CLI, CLI+Skills, and MCP for the same GitHub task:
+
+| Approach | Tokens | Monthly Cost (10K ops) |
+|---|---|---|
+| CLI only | 1,365 | ~$3.20 |
+| CLI + Skills | 4,724 | ~$4.50 |
+| MCP (direct) | 44,026 | ~$55.20 |
+
+That's **17x more expensive** for MCP versus CLI. And MCP had a 28% failure rate (timeouts) versus 100% reliability for CLI.
+
+The culprit? Schema injection. GitHub's Copilot MCP server exposes 43 tools. Every conversation loads all 43 tool definitions — names, descriptions, input schemas, output schemas — even if the agent only uses one.
+
+## Why MCP Is Getting Better (and Why Skills Still Win)
+
+MCP has been adding schema-filtering support via gateway layers. A gateway can return only the 2-3 tool schemas relevant to the current request instead of all 43.
+
+Result: ~90% token overhead reduction for a typical GitHub task (44K to ~3K tokens). Tool calling accuracy improved too.
+
+But Skills still win on pure efficiency because they **avoid schema injection entirely**. Skills teach the agent how to use existing tools; they don't redefine what tools exist. Skills is static content which is prompt-caching friendly which is a saving in compute and memory.
+
+## When to Use Which
+
+| Scenario | Best Approach |
+|---|---|
+| Personal automation | CLI + Skills |
+| Developer tools | CLI + Skills |
+| Internal team tools | Skills (maybe MCP) |
+| B2B SaaS (multi-tenant) | MCP with OAuth |
+| Customer-facing agents | MCP with Gateway |
+
+**The hybrid future:** Skills wrapping MCP is the smart play. Use Skills for teaching domain knowledge and workflow orchestration. Use MCP for authenticated external integrations and multi-user scenarios.
+
+## The Real Insight
+
+Whether you call something a "skill" or a "tool," if it needs to hit Gmail, Slack, or any authenticated service, you face the same OAuth complexity. The vocabulary matters less than whether you have solved authentication, authorization, and audit trails.
+
+Skills vs tools is an architectural choice that maps to:
+
+- **Token budget** (schema vs prompt overhead)
+- **Security surface** (execution vs knowledge)
+- **Multi-user readiness** (ambient auth vs scoped auth)
+
+Build accordingly.
